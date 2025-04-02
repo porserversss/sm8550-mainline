@@ -1,55 +1,82 @@
-name: BUILD - SM8550 Kernel
+name: 🚀 Optimized SM8550 Kernel Build
 
 on:
-    workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+      CROSS_COMPILE: aarch64-linux-gnu-
+      CROSS_COMPILE_ARM32: arm-linux-gnueabi-
+      CC: clang
     steps:
-    - name: Install required packages
+    - name: ⚡ Checkout Kernel Source
+      uses: actions/checkout@v4
+      with:
+        repository: porserversss/sm8550-mainline
+        ref: sheng-6.14
+        path: src
+        fetch-depth: 1
+
+    - name: ⚙️ Install Dependencies
       run: |
         sudo apt update
-        sudo apt install -y build-essential libgmp-dev libmpfr-dev libmpc-dev libisl-dev libncurses5-dev bc git bison flex zstd
-        sudo apt install -y clang gcc make gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
-        sudo apt install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+        sudo apt install -y --no-install-recommends \
+          clang lld llvm build-essential bc bison flex git zstd \
+          gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+          gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi \
+          libssl-dev libncurses5-dev
 
-    - name: Build Image and modules headers
+    - name: 🚧 Prepare Output Directories
+      run: mkdir -p out artifacts/{modules,headers,kernel,dtb}
+
+    - name: 🛠️ Generate Kernel Config
       run: |
-        git clone https://github.com/porserversss/sm8550-mainline.git -b sheng-6.14 src --depth=1
-        mkdir -p out artifacts/{modules,headers,kernel,dtb}
-
         cd src
         cp arch/arm64/configs/sm8550.config ../out/.config
-        make O=../out CC=clang ARCH=arm64 SUBARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- olddefconfig
-        make O=../out CC=clang ARCH=arm64 SUBARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- -j"$(nproc --all)"
-        make O=../out CC=clang ARCH=arm64 SUBARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- modules_prepare -j"$(nproc --all)"
-        make O=../out CC=clang ARCH=arm64 SUBARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- modules_install INSTALL_MOD_PATH=../artifacts/modules -j"$(nproc --all)"
-        make O=../out CC=clang ARCH=arm64 SUBARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- headers_install INSTALL_HDR_PATH=../artifacts/headers -j"$(nproc --all)"
 
-        echo "[ BUILD ]: Kernel compile done"
+    - name: 🔧 Enable LTO and GPIO configs
+      run: |
+        cd out
+        scripts/config --enable LTO_CLANG_FULL \
+                       --enable CONFIG_GPIOLIB \
+                       --enable CONFIG_GPIO_SYSFS \
+                       --enable CONFIG_GPIOLIB_FASTPATH_LIMIT \
+                       --set-val CONFIG_GPIOLIB_FASTPATH_LIMIT 512 \
+                       --enable CONFIG_GPIO_CDEV \
+                       --enable CONFIG_GPIOLIB_IRQCHIP \
+                       --enable CONFIG_GPIOLIB_IRQCHIP_SIMPLE \
+                       --enable CONFIG_GPIO_GENERIC
+        make olddefconfig ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE
 
-        cd ../artifacts
-        cp -rf ../out/arch/arm64/boot/Image* kernel/
-        cp -rf ../out/arch/arm64/boot/dts/* dtb/
+    - name: 🔥 Build Kernel (Optimized Flags)
+      run: |
+        cd out
+        make ${CC:+CC=$CC} ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 LLVM=1 LLVM_IAS=1 -j$(nproc --all)
+        make ${CC:+CC=$CC} ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 modules_prepare
+        make ${CC:+CC=$CC} ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 modules_install INSTALL_MOD_PATH=../artifacts/modules
+        make ${CC:+CC=$CC} ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 headers_install INSTALL_HDR_PATH=../artifacts/headers
 
-        echo "[ BUILD ]: compressing modules"
-        tar -cJf ../modules.tar.xz modules
-        echo "[ BUILD ]: compressing headers"
-        tar -cJf ../headers.tar.xz headers
-        echo "[ BUILD ]: compressing kernel image"
-        tar -cJf ../kernel.tar.xz kernel
-        echo "[ BUILD ]: compressing dtb"
-        tar -cJf ../dtb.tar.xz dtb
+    - name: 📦 Gather Artifacts
+      run: |
+        cp -v out/arch/arm64/boot/Image* artifacts/kernel/
+        cp -rv out/arch/arm64/boot/dts/* artifacts/dtb/
+        tar -I 'zstd -T0 -19' -cvf artifacts.tar.zst -C artifacts .
 
-        echo "[ BUILD ]: compressing all artifacts"
-        tar -cJf ../artifacts.tar.xz .
-
-        echo "[ BUILD ]: Done"
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4.3.3
+    - name: 🎁 Upload Artifacts
+      uses: actions/upload-artifact@v4
       with:
-        path: artifacts.tar.xz
+        name: sm8550-kernel-build
+        path: artifacts.tar.zst
+
+    - name: 🚀 Publish Release
+      uses: marvinpinto/action-automatic-releases@latest
+      with:
+        automatic_release_tag: "latest"
+        prerelease: true
+        title: "🚀 Optimized SM8550 Kernel Build"
+        files: |
+          artifacts.tar.zst
