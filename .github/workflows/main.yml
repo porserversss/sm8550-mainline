@@ -33,15 +33,11 @@ jobs:
     - name: 🚧 Prepare Output Directories
       run: mkdir -p out artifacts/{modules,headers,kernel,dtb}
 
-    - name: 🛠️ Generate Kernel Config
+    - name: 🚀 Configure Kernel
       run: |
         cd src
-        cp arch/arm64/configs/sm8550.config ../out/.config
-
-    - name: 🔧 Enable LTO and GPIO configs
-      run: |
-        cd out
-        scripts/config --enable LTO_CLANG_FULL \
+        scripts/config --file arch/arm64/configs/sm8550.config \
+                       --enable LTO_CLANG_FULL \
                        --enable CONFIG_GPIOLIB \
                        --enable CONFIG_GPIO_SYSFS \
                        --enable CONFIG_GPIOLIB_FASTPATH_LIMIT \
@@ -50,15 +46,15 @@ jobs:
                        --enable CONFIG_GPIOLIB_IRQCHIP \
                        --enable CONFIG_GPIOLIB_IRQCHIP_SIMPLE \
                        --enable CONFIG_GPIO_GENERIC
-        make olddefconfig ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE
+        make O=../out olddefconfig ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE
 
     - name: 🔥 Build Kernel (Optimized Flags)
       run: |
-        cd out
-        make ${CC:+CC=$CC} ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 LLVM=1 LLVM_IAS=1 -j$(nproc --all)
-        make ${CC:+CC=$CC} ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 modules_prepare
-        make ${CC:+CC=$CC} ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 modules_install INSTALL_MOD_PATH=../artifacts/modules
-        make ${CC:+CC=$CC} ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 headers_install INSTALL_HDR_PATH=../artifacts/headers
+        cd src
+        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 LLVM=1 LLVM_IAS=1 -j$(nproc --all)
+        make O=../out modules_prepare ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE
+        make O=../out modules_install INSTALL_MOD_PATH=../artifacts/modules ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE
+        make O=../out headers_install INSTALL_HDR_PATH=../artifacts/headers ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE
 
     - name: 📦 Gather Artifacts
       run: |
