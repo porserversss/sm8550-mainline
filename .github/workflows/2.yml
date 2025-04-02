@@ -1,0 +1,65 @@
+name: 🚀 Optimized SM8550 Kernel Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+      CROSS_COMPILE: aarch64-linux-gnu-
+      CROSS_COMPILE_ARM32: arm-linux-gnueabi-
+      CC: clang
+    steps:
+    - name: ⚡ Checkout Kernel Source
+      uses: actions/checkout@v4
+      with:
+        repository: porserversss/sm8550-mainline
+        ref: sheng-6.14
+        path: src
+        fetch-depth: 1
+
+    - name: ⚙️ Install Dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y --no-install-recommends \
+          clang lld llvm build-essential bc bison flex git zstd \
+          gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+          gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi \
+          libssl-dev libncurses5-dev
+
+    - name: 🚧 Prepare Output Directories
+      run: mkdir -p out artifacts/{modules,headers,kernel,dtb}
+
+    - name: 🔥 Build Kernel (Optimized Flags)
+      run: |
+        cd src
+        scripts/config --file arch/arm64/configs/sm8550.config -e LTO_CLANG_FULL
+        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 sm8550.config
+        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 LLVM=1 LLVM_IAS=1 -j$(nproc --all)
+        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 modules_prepare
+        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 modules_install INSTALL_MOD_PATH=../artifacts/modules
+        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 headers_install INSTALL_HDR_PATH=../artifacts/headers
+
+    - name: 📦 Gather Artifacts
+      run: |
+        cp -v out/arch/arm64/boot/Image* artifacts/kernel/
+        cp -rv out/arch/arm64/boot/dts/* artifacts/dtb/
+        tar -I 'zstd -T0 -19' -cvf artifacts.tar.zst -C artifacts .
+
+    - name: 🎁 Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: sm8550-kernel-build
+        path: artifacts.tar.zst
+
+    - name: 🚀 Publish Release
+      uses: marvinpinto/action-automatic-releases@latest
+      with:
+        automatic_release_tag: "latest"
+        prerelease: true
+        title: "🚀 Optimized SM8550 Kernel Build"
+        files: |
+          artifacts.tar.zst
