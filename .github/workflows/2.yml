@@ -12,6 +12,7 @@ jobs:
       CROSS_COMPILE: aarch64-linux-gnu-
       CROSS_COMPILE_ARM32: arm-linux-gnueabi-
       CC: clang
+
     steps:
     - name: ⚡ Checkout Kernel Source
       uses: actions/checkout@v4
@@ -33,15 +34,19 @@ jobs:
     - name: 🚧 Prepare Output Directories
       run: mkdir -p out artifacts/{modules,headers,kernel,dtb}
 
+    - name: 🛠️ Generate Kernel Config
+      run: |
+        cd src
+        make O=../out ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE sm8550.config
+
     - name: 🔥 Build Kernel (Optimized Flags)
       run: |
         cd src
-        scripts/config --file arch/arm64/configs/sm8550.config -e LTO_CLANG_FULL
-        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 sm8550.config
-        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 LLVM=1 LLVM_IAS=1 -j$(nproc --all)
-        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 modules_prepare
-        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 modules_install INSTALL_MOD_PATH=../artifacts/modules
-        make O=../out ${CC:+CC=$CC} $ARCH CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 headers_install INSTALL_HDR_PATH=../artifacts/headers
+        scripts/config --file ../out/.config -e LTO_CLANG_FULL
+        make O=../out ARCH=$ARCH CC=$CC LLVM=1 LLVM_IAS=1 CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 -j$(nproc --all)
+        make O=../out ARCH=$ARCH CC=$CC LLVM=1 LLVM_IAS=1 CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 modules_prepare
+        make O=../out ARCH=$ARCH CC=$CC LLVM=1 LLVM_IAS=1 CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 modules_install INSTALL_MOD_PATH=../artifacts/modules
+        make O=../out ARCH=$ARCH CC=$CC LLVM=1 LLVM_IAS=1 CROSS_COMPILE=$CROSS_COMPILE CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 headers_install INSTALL_HDR_PATH=../artifacts/headers
 
     - name: 📦 Gather Artifacts
       run: |
